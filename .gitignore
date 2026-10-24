@@ -1,3 +1,4 @@
+# 输出与中间产物
 output/
 saved/
 *.wav
@@ -7,3 +8,8 @@ __pycache__/
 
 # 密钥文件，绝不入库
 .env
+
+# 内容文件（剧本正文等）：只保留示例和依赖清单，其余一律不追踪
+*.txt
+!example.txt
+!requirements.txt
