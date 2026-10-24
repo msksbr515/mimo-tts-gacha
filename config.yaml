@@ -1,0 +1,58 @@
+# 批量 TTS 配置：改这个文件就行，脚本不再接受命令行参数。
+
+# ---------- 接口 ----------
+api:
+  base_url: https://api.xiaomimimo.com/v1
+  model: mimo-v2.5-tts-voiceclone
+  # 留空即可：密钥从项目根目录的 .env（MIMO_API_KEY=...）或环境变量读取
+  # 优先级：环境变量 > .env > 这里的值
+  api_key: ""
+  audio_format: wav          # 输出音频格式，决定文件后缀
+  voice_mime: audio/mpeg     # 参考音频打包成 data URL 时的 MIME
+
+# ---------- 路径（相对本文件所在目录）----------
+paths:
+  input: input.txt           # 默认文本；命令行传了 txt 就用命令行那个
+  output: output             # 音频输出目录
+  voice: source.wav          # 参考音频
+
+# ---------- 提示词（放在 user 消息里，决定腔调）----------
+prompt: ""
+
+# ---------- 停顿标记 ----------
+pause:
+  enabled: true
+  marker: "[]"               # 官方约定的停顿标记
+  scope: sentence            # sentence = 只在句末标点后；clause = 逗号/分号/破折号后也插
+  repeat: 1                  # 每个位置插几个标记
+
+# ---------- 拖沓检测与重抽 ----------
+quality:
+  retry: 5                   # 判定拖沓后重抽几次；用光仍不合格 → 丢弃不保存
+  max_silence: 0.55          # 静音占比上限
+  max_gap: 0.90              # 最长静音（秒）上限
+  min_wpm: 90                # 语速下限（只对 >= min_words 词的句子生效）
+  min_words: 6               # 少于这么多词就不看语速
+  duration_factor: 0.9       # 时长上限 = 词数 * factor + duration_bonus
+  duration_bonus: 3.0
+
+# ---------- 并发与请求 ----------
+request:
+  concurrency: 6             # 并发上限，实际并发会按 429 自适应
+  rpm: 100                   # 整体请求速率上限，0 = 不限
+  retries: 4                 # 单条请求失败的重试次数
+  timeout: 60                # 单次请求硬超时秒数，0 = 不限
+  delay: 0                   # 每条完成后等待秒数
+
+# ---------- 运行范围 ----------
+run:
+  start: 1                   # 从第几条开始（1 起）
+  limit: 0                   # 本次最多跑几条，0 = 全部
+  force: false               # true = 已存在的音频也重新生成
+  dry_run: false             # true = 只打印插入标记后的文本，不调接口
+
+# ---------- 日志 ----------
+# 只记录成功(OK)和失败(FAIL)；跳过(SKIP)不写日志。
+log:
+  enabled: true
+  path: output/run.log       # 相对本文件所在目录；TSV，可直接用 Excel 打开

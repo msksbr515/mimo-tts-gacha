@@ -1,0 +1,7 @@
+# 运行本工程需要另外安装的第三方包。
+# 标准库不用列，也不用锁版本；这两者的依赖（httpx2、pydantic 等）会随它们自动装好。
+#
+# 安装：py -m pip install -r requirements.txt
+
+openai   # 调 MiMo 的 OpenAI 兼容接口，做语音合成
+pyyaml   # 读 config.yaml

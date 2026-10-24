@@ -1,0 +1,9 @@
+output/
+saved/
+*.wav
+*.pyc
+*.log
+__pycache__/
+
+# 密钥文件，绝不入库
+.env
