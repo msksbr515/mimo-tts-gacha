@@ -48,8 +48,9 @@ def run(settings: Settings) -> int:
         return 2
 
     if not settings.api.api_key:
-        print("[错误] 没有可用的 API key：config.yaml 的 api.api_key 为空，"
-              "环境变量 MIMO_API_KEY 也未设置。", file=sys.stderr)
+        print("[错误] 没有可用的 API key：在项目根目录的 .env 里写 "
+              "MIMO_API_KEY=sk-xxx（可参考 .env.example），或设置同名环境变量。",
+              file=sys.stderr)
         return 2
 
     workers = max(1, min(settings.request.concurrency, len(items), 32))

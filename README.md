@@ -13,6 +13,8 @@
 tts/
 ├─ main.py              入口脚本（很薄，只把项目目录交给 ttsgen）
 ├─ requirements.txt     依赖：openai、pyyaml
+├─ .env                 你的 API 密钥（不进版本库）
+├─ .env.example         .env 模板，复制后填 key
 ├─ config.yaml          全部配置
 ├─ ttsgen/              实现包
 │  ├─ cli.py            参数解析、装配、退出码
@@ -37,6 +39,21 @@ tts/
 py -m pip install -r requirements.txt
 ```
 
+## 配置密钥
+
+密钥放在项目根目录的 `.env`，不进版本库：
+
+```bash
+cp .env.example .env      # Windows: copy .env.example .env
+```
+
+```ini
+MIMO_API_KEY=sk-你的key
+```
+
+优先级：**真实环境变量 > `.env` > `config.yaml` 的 `api.api_key`**，
+所以临时换 key 用 `set MIMO_API_KEY=sk-xxx` 即可，不用改文件。
+
 ## 运行
 
 ```bash
@@ -50,7 +67,7 @@ py -m ttsgen               # 等价入口
 ## 快速开始
 
 1. 装依赖；
-2. 改 `config.yaml`（确认 `paths.voice`、`api.api_key`；`paths.input` 是默认文本）；
+2. 准备 `.env`（见上一节）并改 `config.yaml`（确认 `paths.voice`；`paths.input` 是默认文本）；
 3. 打开预览（不花钱）：
 
    ```yaml
@@ -84,7 +101,7 @@ py -m ttsgen               # 等价入口
 | --- | --- |
 | `base_url` | 接口地址 |
 | `model` | 模型 ID，如 `mimo-v2.5-tts-voiceclone` |
-| `api_key` | 密钥；留空则读环境变量 `MIMO_API_KEY`（环境变量优先） |
+| `api_key` | 一般留空，密钥放 `.env`；留空时读 `MIMO_API_KEY` |
 | `audio_format` | 输出格式，同时决定文件后缀 |
 | `voice_mime` | 参考音频打包成 data URL 时的 MIME |
 
@@ -157,6 +174,7 @@ TTS 模型官方限制均为 **RPM 100 / TPM 10M**（[速率限制](https://mimo
 
 ## 常见问题
 
+**`[错误] 没有可用的 API key`** — 根目录没有 `.env`，或里面 `MIMO_API_KEY` 为空，环境变量也没设；`.env` 要和 `config.yaml` 同级。
 **`[配置错误] config.yaml 缺少 xxx`** — 配置缺键，按提示补上。
 **`[配置错误] 找不到配置文件`** — 从别的目录调用时，配置按脚本目录找；确认 `config.yaml` 和 `main.py` 同级。
 **命令行为什么不能加 `--xxx`** — 只有位置参数（txt），其余设置走 `config.yaml`。
