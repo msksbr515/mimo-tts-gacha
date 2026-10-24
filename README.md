@@ -1,74 +1,177 @@
-# 批量 TTS（语音克隆）
+# 批量语音合成工具 使用说明书
 
-读取 txt（一行一条），在真实的句末标点后插入 `[]`，逐条调用语音克隆接口，把音频原样写入 `output/`，
-并对结果做拖沓检测——不合格就重抽，仍不合格就丢弃不保存。
+版本 1.0.0
 
-- 所有设置都在 `config.yaml`；
-- 命令行只接受一个可选参数：要跑的 txt 文件；
-- 运行日志记在 `output/run.log`，只记成功与失败。
+---
 
-## 目录结构
+## 1. 概述
 
-```
-tts/
-├─ main.py              入口脚本（很薄，只把项目目录交给 ttsgen）
-├─ requirements.txt     依赖：openai、pyyaml
-├─ .env                 你的 API 密钥（不进版本库）
-├─ .env.example         .env 模板，复制后填 key
-├─ config.yaml          全部配置
-├─ ttsgen/              实现包
-│  ├─ cli.py            参数解析、装配、退出码
-│  ├─ config.py         config.yaml → 不可变配置对象
-│  ├─ text.py           读文本、挑行、文件名片段
-│  ├─ pause.py          停顿标记规则
-│  ├─ quality.py        静音/语速分析、拖沓判定
-│  ├─ api.py            合成请求、错误分类、退避
-│  ├─ ratelimit.py      令牌桶、自适应并发、硬超时
-│  ├─ runlog.py         TSV 日志
-│  ├─ runner.py         批处理流水线
-│  └─ console.py        控制台编码、线程安全输出
-├─ input.txt            待合成文本，一行一条
-├─ example.txt          示例文本
-├─ source.wav           参考音频
-└─ output/              输出目录（音频 + run.log）
-```
+本工具把一个纯文本文件（一行一条台词）批量合成为语音文件。工作方式：
 
-## 安装
+1. 读取文本，每行作为一条待合成内容；
+2. 在真实句末标点后插入停顿标记 `[]`；
+3. 调用语音克隆接口合成音频；
+4. 检测合成结果是否拖沓，不合格则重抽；
+5. 音频写入输出目录，成功与失败记入日志。
+
+工具**不对音频做任何后期处理**（不剪静音、不变速、不加滤镜），接口返回什么就保存什么。
+
+## 2. 运行环境
+
+| 项目 | 要求 |
+| --- | --- |
+| 操作系统 | Windows / macOS / Linux |
+| Python | 3.9 及以上（使用了内置泛型注解） |
+| 网络 | 可访问接口地址 |
+| 外部程序 | 无（不需要 ffmpeg） |
+
+## 3. 安装与初始化
+
+### 3.1 安装依赖
 
 ```bash
 py -m pip install -r requirements.txt
 ```
 
-## 配置密钥
+### 3.2 配置密钥
 
-密钥放在项目根目录的 `.env`，不进版本库：
+密钥不写在配置文件里。把模板复制成实际文件：
 
 ```bash
-cp .env.example .env      # Windows: copy .env.example .env
+cp .env.example .env        # Windows: copy .env.example .env
 ```
+
+编辑 `.env`，填入自己的密钥：
 
 ```ini
-MIMO_API_KEY=sk-你的key
+MIMO_API_KEY=sk-你的密钥
 ```
 
-优先级：**真实环境变量 > `.env` > `config.yaml` 的 `api.api_key`**，
-所以临时换 key 用 `set MIMO_API_KEY=sk-xxx` 即可，不用改文件。
+密钥优先级：**系统环境变量 > `.env` 文件 > `config.yaml` 的 `api.api_key`**。
+临时更换可直接 `set MIMO_API_KEY=sk-xxx`，无需改动任何文件。
 
-## 运行
+> `.env` 已被 `.gitignore` 排除，不会进入版本库。
 
-```bash
-py main.py                 # 跑 config.yaml 里 paths.input 指定的文件
-py main.py 别的.txt         # 跑指定的 txt，其余设置仍走 config.yaml
-py -m ttsgen               # 等价入口
+## 4. 目录结构
+
+```
+工程根目录/
+├─ main.py              启动脚本
+├─ requirements.txt     依赖清单（openai、pyyaml）
+├─ config.yaml          全部可调参数
+├─ .env                 密钥（不入库）
+├─ .env.example         密钥模板
+├─ ttsgen/              实现代码
+│  ├─ cli.py            命令行入口
+│  ├─ config.py         配置读取与校验
+│  ├─ text.py           文本读取、条目整理、文件命名
+│  ├─ pause.py          停顿标记规则
+│  ├─ quality.py        音频统计与拖沓判定
+│  ├─ api.py            接口调用与错误处理
+│  ├─ ratelimit.py      限速、并发控制、超时
+│  ├─ runlog.py         运行日志
+│  ├─ runner.py         批处理流程
+│  └─ console.py        控制台输出与编码
+├─ example.txt          示例文本（入库）
+├─ input.txt            实际文本（不入库）
+└─ output/              输出目录（不入库）
 ```
 
-支持的退出码：`0` 全部成功 / `1` 有条目失败 / `2` 配置或文件问题 / `130` 被 Ctrl+C 中断。
+> 版本库只跟踪程序与示例：所有 `*.txt` 正文文件、`*.wav` 音频、`output/`、`saved/`、`.env` 均不进入仓库。
 
-## 快速开始
+## 5. 配置文件详解
 
-1. 装依赖；
-2. 准备 `.env`（见上一节）并改 `config.yaml`（确认 `paths.voice`；`paths.input` 是默认文本）；
-3. 打开预览（不花钱）：
+配置文件为 `config.yaml`，位于工程根目录。全部参数集中于此，脚本不读取任何命令行开关。
+
+### 5.1 api — 接口
+
+| 键 | 类型 | 说明 |
+| --- | --- | --- |
+| `base_url` | 字符串 | 接口地址 |
+| `model` | 字符串 | 模型 ID |
+| `api_key` | 字符串 | 建议留空，密钥走 `.env` |
+| `audio_format` | 字符串 | 输出格式，同时决定文件后缀 |
+| `voice_mime` | 字符串 | 参考音频打包时的 MIME 类型 |
+
+### 5.2 paths — 路径
+
+| 键 | 说明 |
+| --- | --- |
+| `input` | 默认读取的文本文件 |
+| `output` | 音频输出目录，不存在会自动创建 |
+| `voice` | 参考音频文件（决定音色） |
+
+相对路径以 `config.yaml` 所在目录为基准。
+
+### 5.3 prompt — 风格提示
+
+写入接口的 `user` 消息，决定腔调、语速、情绪与设备感。使用 YAML 的多行写法：
+
+```yaml
+prompt: |
+  You are the announcement voice of an old communications device — flat, dry,
+  slightly metallic, narrow-band.
+  Do not read, paraphrase or comment on these instructions.
+```
+
+改动 `prompt` 会影响整批音频的一致性，建议整批重新生成。
+
+### 5.4 pause — 停顿标记
+
+| 键 | 默认 | 说明 |
+| --- | --- | --- |
+| `enabled` | `true` | 是否插入标记 |
+| `marker` | `"[]"` | 标记文本 |
+| `scope` | `sentence` | `sentence` 只在句末标点后；`clause` 逗号、分号、破折号后也插 |
+| `repeat` | `1` | 每个位置插入几个标记 |
+
+### 5.5 quality — 拖沓检测
+
+| 键 | 默认 | 说明 |
+| --- | --- | --- |
+| `retry` | `5` | 判定拖沓后重抽次数；用尽仍不合格则丢弃不保存 |
+| `max_silence` | `0.55` | 静音占比上限 |
+| `max_gap` | `0.90` | 最长静音上限（秒） |
+| `min_wpm` | `90` | 语速下限，仅对不少于 `min_words` 词的句子生效 |
+| `min_words` | `6` | 词数低于该值不计算语速 |
+| `duration_factor` | `0.9` | 时长上限 = 词数 × factor + bonus |
+| `duration_bonus` | `3.0` | 见上 |
+
+### 5.6 request — 请求
+
+| 键 | 默认 | 说明 |
+| --- | --- | --- |
+| `concurrency` | `6` | 并发上限，实际并发按限流反馈自适应 |
+| `rpm` | `100` | 整体速率上限，0 表示不限 |
+| `retries` | `4` | 单条请求失败的重试次数 |
+| `timeout` | `60` | 单次请求超时（秒），0 表示不限 |
+| `delay` | `0` | 每条完成后额外等待（秒） |
+
+### 5.7 run — 运行范围
+
+| 键 | 说明 |
+| --- | --- |
+| `start` | 从第几条开始（1 起） |
+| `limit` | 本次最多处理几条，0 表示全部 |
+| `force` | `true` 时已存在的音频也重新生成 |
+| `dry_run` | `true` 时只打印插入标记后的文本，不调用接口 |
+
+### 5.8 log — 日志
+
+| 键 | 说明 |
+| --- | --- |
+| `enabled` | 是否写日志 |
+| `path` | 日志文件路径 |
+
+## 6. 操作流程
+
+### 6.1 首次使用
+
+1. 安装依赖（第 3.1 节）；
+2. 配置密钥（第 3.2 节）；
+3. 确认 `config.yaml` 的 `paths.voice` 指向参考音频；
+4. 把台词写入文本文件，一行一条，保存为 UTF-8；
+5. 打开预览开关，检查标记位置：
 
    ```yaml
    run:
@@ -79,104 +182,204 @@ py -m ttsgen               # 等价入口
    py main.py
    ```
 
-4. 预览没问题就把 `dry_run` 改回 `false`，正式跑。
+   输出形如：
 
-## 想改什么，去哪个文件
+   ```
+   [行 1] Terminal online. [] Systems are ready.
+   ```
 
-| 需求 | 改哪里 |
+6. 确认无误后关闭预览：
+
+   ```yaml
+   run:
+     dry_run: false
+   ```
+
+7. 正式运行：
+
+   ```bash
+   py main.py
+   ```
+
+### 6.2 日常使用
+
+- 处理默认文本：`py main.py`
+- 处理指定文本：`py main.py 别的文件.txt`
+- 中断后继续：直接再运行一次，已完成的音频自动跳过
+
+### 6.3 分批处理
+
+```yaml
+run:
+  start: 51
+  limit: 50
+```
+
+表示处理第 51～100 条。
+
+## 7. 命令行用法
+
+```
+py main.py [文本文件]
+```
+
+| 形式 | 说明 |
 | --- | --- |
-| 腔调、语速、设备感 | `config.yaml` 的 `prompt` |
-| 停顿标记的判定规则 | `ttsgen/pause.py` |
-| 静音/语速阈值、重抽次数 | `config.yaml` 的 `quality` |
-| 重抽流程本身（比如加重抽上限、换判定顺序） | `ttsgen/runner.py` 的 `_run_pool` |
-| 并发、限速、超时、退避 | `config.yaml` 的 `request` + `ttsgen/api.py` / `ratelimit.py` |
-| 日志字段 | `ttsgen/runlog.py` |
-| 新增一个配置项 | `config.yaml` + `ttsgen/config.py` 的 dataclass |
+| `py main.py` | 使用 `config.yaml` 中 `paths.input` 指定的文件 |
+| `py main.py 某文件.txt` | 使用指定文件，其余设置仍取自 `config.yaml` |
+| `py -m ttsgen` | 与 `py main.py` 等价 |
 
-## config.yaml 说明
+- 相对路径先按当前目录查找，找不到再按脚本所在目录查找；
+- 不支持 `--xxx` 形式的开关，所有设置均通过 `config.yaml` 调整；误加会提示用法并以退出码 2 结束。
 
-### api
+## 8. 输出说明
 
-| 键 | 说明 |
+### 8.1 音频文件
+
+命名规则：`<行号>_<正文前 40 字符>.wav`
+
+- 行号为该行在文本文件中的真实行号，不足 4 位前补零；
+- 标点、空格替换为下划线，中文字符保留。
+
+示例：
+
+```
+output/0001_Terminal_online_Systems_are_ready.wav
+```
+
+音频先写入临时文件再改名，中断不会留下不完整文件。
+
+### 8.2 日志文件
+
+默认 `output/run.log`，制表符分隔，可用 Excel 打开。
+
+| 字段 | 说明 |
 | --- | --- |
-| `base_url` | 接口地址 |
-| `model` | 模型 ID，如 `mimo-v2.5-tts-voiceclone` |
-| `api_key` | 一般留空，密钥放 `.env`；留空时读 `MIMO_API_KEY` |
-| `audio_format` | 输出格式，同时决定文件后缀 |
-| `voice_mime` | 参考音频打包成 data URL 时的 MIME |
+| `time` | 完成时间 |
+| `status` | `OK` 成功 / `FAIL` 失败 |
+| `line` | 文本行号 |
+| `file` | 输出文件名 |
+| `duration` | 音频时长（秒） |
+| `silence` | 静音占比 |
+| `max_gap` | 最长静音（秒） |
+| `wpm` | 语速（词/分） |
+| `retries` | 重抽次数 |
+| `note` | 失败原因 |
 
-### paths / prompt / pause
+只记录成功与失败；因文件已存在而跳过的条目**不写入日志**。日志采用追加方式，不覆盖历史记录。
 
-- `paths`：`input` 默认文本、`output` 音频目录、`voice` 参考音频；相对路径以 `config.yaml` 所在目录为基准。
-- `prompt`：`user` 消息里的风格指令，用 `|` 块写多行。
-- `pause`：`enabled` 开关、`marker` 标记文本、`scope`（`sentence`/`clause`）、`repeat` 每个位置插几个。
+### 8.3 退出码
 
-### quality（拖沓检测与重抽）
+| 码 | 含义 |
+| --- | --- |
+| `0` | 全部成功 |
+| `1` | 存在失败条目 |
+| `2` | 配置或文件错误 |
+| `130` | 被 Ctrl+C 中断 |
 
-| 键 | 默认 | 说明 |
+## 9. 停顿标记规则
+
+合成结果对句末标点的停顿不稳定，因此在真实句子边界插入 `[]`，让模型明确停住。
+
+判定原则：**ASCII 标点后必须跟空格，才算真正的句子边界**。
+
+| 输入 | 输出 | 原因 |
 | --- | --- | --- |
-| `retry` | 5 | 判定拖沓后重抽几次；用光仍不合格 → 丢弃不保存 |
-| `max_silence` | 0.55 | 静音占比上限 |
-| `max_gap` | 0.90 | 最长静音（秒）上限 |
-| `min_wpm` | 90 | 语速下限，仅对 ≥ `min_words` 的句子生效 |
-| `min_words` | 6 | 少于这么多词就不看语速 |
-| `duration_factor` / `duration_bonus` | 0.9 / 3.0 | 时长上限 = 词数 × factor + bonus |
-
-### request / run / log
-
-- `request`：`concurrency`、`rpm`、`retries`、`timeout`、`delay`。
-- `run`：`start`、`limit`、`force`、`dry_run`。
-- `log`：`enabled`、`path`（默认 `output/run.log`）。
-
-## 停顿标记规则
-
-关键是「标点后面有没有空格」——只有后面跟空格的标点才算真正的句子边界。
-
-| 输入 | 结果 | 原因 |
-| --- | --- | --- |
-| `Low. Next` | `Low.[] Next` | 句点后跟空格 → 句子边界 |
-| `M.E.G. Base` | 不插 | 词内含点，缩写 |
-| `J. Smith` | 不插 | 单个大写字母 = 姓名首字母 |
-| `Mr. Lee` / `e.g. this` | 不插 | 缩写词表 |
-| `3.5 dollars` | 不插 | 点后是数字 |
-| `no space.Here` | 不插 | 点后没有空格 |
-| `"Stop!" Next` | `"Stop!"[] Next` | 跳过收尾引号后是空格，标记放引号外 |
+| `Ready. Go` | `Ready.[] Go` | 句点后跟空格，句子边界 |
+| `M.E.G. Base` | 不插入 | 词内含点，属缩写 |
+| `J. Smith` | 不插入 | 单个大写字母，属姓名首字母 |
+| `Mr. Lee`、`e.g. this` | 不插入 | 缩写词表 |
+| `Costs 3.5 units` | 不插入 | 句点后是数字 |
+| `no space.Here` | 不插入 | 句点后无空格 |
+| `"Stop!" Next` | `"Stop!"[] Next` | 跳过收尾引号后是空格，标记置于引号外 |
 | `你好。再见` | `你好。[]再见` | 全角标点不要求空格 |
-| 行尾的 `.` `!` | 不插 | 避免多余的尾部静音 |
+| 行尾的 `.` `!` | 不插入 | 避免尾部多余静音 |
 
-## 日志
+`scope: clause` 时，`,` `;` `:` `—` 按同样规则处理（要求后跟空格），全角 `，、；：` 不要求空格。
 
-`output/run.log`，TSV，可直接用 Excel 打开：
+## 10. 拖沓检测与重抽
+
+每条音频落盘前会做一次统计（读取 PCM，10 毫秒一帧，毫秒级耗时），判定是否拖沓：
+
+| 条件 | 依据 |
+| --- | --- |
+| 时长异常 | 超过 `词数 × duration_factor + duration_bonus` |
+| 静音过多 | 静音占比超过 `max_silence` |
+| 停顿过长 | 最长静音超过 `max_gap` |
+| 语速过慢 | 低于 `min_wpm`（仅对不少于 `min_words` 词的句子） |
+
+命中任一条件即重抽，最多 `retry` 次：
+
+- 中途某次合格，立即保存该次并停止重抽；
+- 全部不合格，该条**丢弃不保存**，记录一条 `FAIL`，进程退出码为 1；
+- 由于文件未生成，下次运行会重新尝试。
+
+运行日志示例：
 
 ```
-time	status	line	file	duration	silence	max_gap	wpm	retries	note
-2026-10-25 01:41:01	OK	1	0001_Warning_Sanity_low.wav	1.65	3%	0.05	112	0
-2026-10-25 01:41:01	FAIL	2	0002_Attention_all_personnel.wav					2	重抽 2 次仍太拖沓（静音 80%，最长停顿 2.40s），已丢弃不保存
+[3/31] 行 3 太拖沓（时长 5.1s，最长停顿 1.07s，语速 42wpm），第 1 次重抽…
+[3/31] 行 3 ok 0003_Terminal_online.wav  2.56s  静音 26%／最长停顿 0.46s／63wpm  重抽 1  (18.2s)
 ```
 
-- 只记 `OK` 和 `FAIL`；跳过的（已存在）不写；
-- 追加写入，不覆盖历史。
+> 重抽会产生额外请求。额度紧张时可将 `retry` 调小，或放宽阈值。
 
-## 并发与限速
+## 11. 并发与限速
 
-TTS 模型官方限制均为 **RPM 100 / TPM 10M**（[速率限制](https://mimo.mi.com/docs/zh-CN/api/guidance/rate-limit)），
-按「账号 + 模型 + 所有 Key 合计」计算，另有账号级并发上限，超出返回 429。
+接口对语音合成模型限制为 **RPM 100 / TPM 10M**，按「账号 + 模型 + 全部密钥合计」计算；此外存在账号级并发上限，超出返回 429。
 
-- 令牌桶按 `request.rpm` 限速；
-- 并发从 2 起步，每成功 5 次加 1 路，遇 429 立即减半并全局冷却——`concurrency` 只是上限；
-- 429 优先用 `Retry-After`；只重试 408/429/5xx 和连接类错误。
+工具的处理方式：
 
-## 超时与失败
+- 令牌桶按 `rpm` 控制整体速率；
+- 并发自 2 起，每成功 5 次加 1 路，遇 429 立即减半并全局冷却，`concurrency` 仅作为上限；
+- 429 优先采用响应头 `Retry-After`；
+- 仅对 408、429、5xx 及连接类错误重试，其余 4xx 直接判失败。
 
-- SDK 内置重试已关闭（`max_retries=0`），重试完全由 `request.retries` 控制；
-- 每次请求有墙钟超时（`request.timeout`），到点放弃并 1s 后重发；
-- 单条最终失败或判定拖沓 → 不落盘、记一条 `FAIL`、退出码 1；重跑会自动再试。
+## 12. 超时与失败处理
 
-## 常见问题
+- SDK 自带重试已关闭，重试完全由 `retries` 控制，避免叠加导致长时间等待；
+- 每次请求另有墙钟超时（`timeout`），到点即放弃等待，1 秒后重发；
+- 单条最终失败不生成文件，记录 `FAIL`，不影响其他条目。
 
-**`[错误] 没有可用的 API key`** — 根目录没有 `.env`，或里面 `MIMO_API_KEY` 为空，环境变量也没设；`.env` 要和 `config.yaml` 同级。
-**`[配置错误] config.yaml 缺少 xxx`** — 配置缺键，按提示补上。
-**`[配置错误] 找不到配置文件`** — 从别的目录调用时，配置按脚本目录找；确认 `config.yaml` 和 `main.py` 同级。
-**命令行为什么不能加 `--xxx`** — 只有位置参数（txt），其余设置走 `config.yaml`。
-**`429` 频繁** — 把 `request.rpm` 降到 10~20，比调 `concurrency` 有效。
-**某条一直失败** — 看 `run.log` 的 `note`；若是判拖沓，先听同批其他文件，再调 `quality` 阈值。
+最坏耗时约为 `timeout × retries` 每条（默认 60 × 4）。
+
+## 13. 故障排查
+
+| 现象 | 原因与处理 |
+| --- | --- |
+| `[配置错误] 找不到配置文件` | `config.yaml` 需与 `main.py` 同级 |
+| `[配置错误] config.yaml 缺少 xxx` | 配置缺项，按提示补齐 |
+| `[错误] 没有可用的 API key` | 根目录缺少 `.env`，或其中 `MIMO_API_KEY` 为空，且未设置环境变量 |
+| `[错误] 找不到文本文件` | 路径错误；相对路径先按当前目录、再按脚本目录查找 |
+| `[错误] 找不到参考音频` | `paths.voice` 指向的文件不存在 |
+| 提示 `429` | 降低 `rpm`（如 10～20）比调整 `concurrency` 更有效 |
+| 某条一直失败 | 查看日志 `note` 字段；若为拖沓判定，可先试听同批其他音频，再调整 `quality` 阈值 |
+| 标记被念出来 | 用 `dry_run` 核对插入位置；仍被朗读则更换 `marker` 或关闭 `pause.enabled` |
+| 中文显示为乱码 | 工具会按终端类型固定编码；重定向检查：`py main.py > out.txt` 后用 UTF-8 编辑器打开 |
+
+## 14. 附录
+
+### 14.1 模块职责
+
+| 文件 | 职责 |
+| --- | --- |
+| `main.py` | 启动脚本，把工程目录交给 `ttsgen` |
+| `ttsgen/cli.py` | 解析命令行、装配配置、返回退出码 |
+| `ttsgen/config.py` | 读取 `.env` 与 `config.yaml`，校验并生成配置对象 |
+| `ttsgen/text.py` | 文本读取、条目整理、文件名生成 |
+| `ttsgen/pause.py` | 停顿标记判定与插入 |
+| `ttsgen/quality.py` | 音频统计与拖沓判定 |
+| `ttsgen/api.py` | 接口调用、错误分类、退避策略 |
+| `ttsgen/ratelimit.py` | 令牌桶、自适应并发、超时调用 |
+| `ttsgen/runlog.py` | 日志写入 |
+| `ttsgen/runner.py` | 批处理流程与汇总 |
+| `ttsgen/console.py` | 控制台编码与线程安全输出 |
+
+### 14.2 常见调整
+
+| 需求 | 修改位置 |
+| --- | --- |
+| 改变腔调与语速 | `config.yaml` 的 `prompt` |
+| 改变停顿判定规则 | `ttsgen/pause.py` |
+| 调整检测阈值或重抽次数 | `config.yaml` 的 `quality` |
+| 调整并发、限速、超时 | `config.yaml` 的 `request` |
+| 新增配置项 | `config.yaml` 与 `ttsgen/config.py` |
