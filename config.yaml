@@ -57,4 +57,4 @@ run:
 # 只记录成功(OK)和失败(FAIL)；跳过(SKIP)不写日志。
 log:
   enabled: true
-  path: output/run.log       # 相对本文件所在目录；TSV，可直接用 Excel 打开
+  dir: logs                  # 每次运行写 logs/run_<时间戳>.log（TSV，可直接用 Excel 打开）

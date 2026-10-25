@@ -1,5 +1,6 @@
 # 输出与中间产物
 output/
+logs/
 saved/
 *.wav
 *.pyc

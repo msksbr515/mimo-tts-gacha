@@ -116,7 +116,7 @@ class RunConfig:
 @dataclass(frozen=True)
 class LogConfig:
     enabled: bool
-    path: Path
+    dir: Path
 
 
 @dataclass(frozen=True)
@@ -196,7 +196,7 @@ class Settings:
             ),
             log=LogConfig(
                 enabled=bool(need(cfg, "log.enabled")),
-                path=base / need(cfg, "log.path"),
+                dir=base / optional(cfg, "log.dir", "logs"),
             ),
         )
 

@@ -65,10 +65,11 @@ def run(settings: Settings) -> int:
     ext = "." + settings.api.audio_format.strip(".").lower()
     width = max(4, len(str(max(lineno for lineno, _ in items))))
 
+    log_path = settings.log.dir / f"run_{stamp}.log"
     started_at = time.time()
-    with RunLog(settings.log.path, settings.log.enabled) as run_log:
+    with RunLog(log_path, settings.log.enabled) as run_log:
         _print_header(settings, input_path, output_dir, len(lines), len(items), workers, gate,
-                      existing)
+                      existing, log_path)
         done, skipped, failures, interrupted = _run_pool(
             settings, synthesizer, run_log, items, output_dir, existing, ext, width, workers)
 
@@ -95,7 +96,7 @@ def collect_existing(root: Path) -> set[str]:
 
 def _print_header(settings: Settings, input_path: Path, output_dir: Path, total_lines: int,
                   count: int, workers: int, gate: AdaptiveGate,
-                  existing: set[str]) -> None:
+                  existing: set[str], log_path: Path) -> None:
     print(f"文本文件：{input_path.resolve()}   共 {total_lines} 行，待合成 {count} 条")
     print(f"输出目录：{output_dir.resolve()}")
     if output_dir.parent.exists() and settings.paths.timestamped:
@@ -104,7 +105,7 @@ def _print_header(settings: Settings, input_path: Path, output_dir: Path, total_
     print(f"参考音频：{settings.paths.voice}")
     print(f"停顿标记：{settings.pause.marker if settings.pause.enabled else '关闭'}")
     print(f"拖沓重抽：{settings.quality.retry} 次   日志："
-          f"{settings.log.path if settings.log.enabled else '关闭'}")
+          f"{log_path if settings.log.enabled else '关闭'}")
     print()
     rate_text = f"限速 {settings.request.rpm:g} RPM" if settings.request.rpm > 0 else "不限速"
     log(f"开始合成：{count} 条，并发上限 {workers}（自适应，起始 {gate.limit}），{rate_text}")

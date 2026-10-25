@@ -17,11 +17,14 @@ class RunLog:
         self.path = path
         self._handle = None
         self._lock = threading.Lock()
-        if not enabled:
+
+    def _ensure_open(self) -> None:
+        """首次写入时才落地文件：整批跳过时不会留下空日志。"""
+        if self._handle or not self.enabled:
             return
-        path.parent.mkdir(parents=True, exist_ok=True)
-        is_new = not path.exists() or path.stat().st_size == 0
-        self._handle = path.open("a", encoding="utf-8", newline="")
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        is_new = not self.path.exists() or self.path.stat().st_size == 0
+        self._handle = self.path.open("a", encoding="utf-8", newline="")
         if is_new:
             self._handle.write("\t".join(self.HEADER) + "\n")
             self._handle.flush()
@@ -29,11 +32,12 @@ class RunLog:
     def write(self, status: str, line_no: int, filename: str, *, duration: str = "",
               silence: str = "", max_gap: str = "", wpm: str = "", retries: int = 0,
               note: str = "") -> None:
-        if not self._handle:
+        if not self.enabled:
             return
         row = [time.strftime("%Y-%m-%d %H:%M:%S"), status, str(line_no), filename,
                duration, silence, max_gap, wpm, str(retries), note]
         with self._lock:
+            self._ensure_open()
             self._handle.write("\t".join(value.replace("\t", " ") for value in row) + "\n")
             self._handle.flush()
 
