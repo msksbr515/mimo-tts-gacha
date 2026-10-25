@@ -12,6 +12,7 @@ from .api import Synthesizer
 from .config import Settings
 from .console import log
 from .quality import analyze_wav, judge_drag
+from .report import ItemRecord, render as render_report, write as write_report
 from .ratelimit import AdaptiveGate, RateLimiter
 from .runlog import RunLog
 from .text import collect_items, preview, read_text_file, slugify
@@ -66,15 +67,27 @@ def run(settings: Settings) -> int:
     width = max(4, len(str(max(lineno for lineno, _ in items))))
 
     log_path = settings.log.dir / f"run_{stamp}.log"
+    report_path = settings.log.dir / f"report_{stamp}.md"
+    records: list[ItemRecord] = []
     started_at = time.time()
     with RunLog(log_path, settings.log.enabled) as run_log:
         _print_header(settings, input_path, output_dir, len(lines), len(items), workers, gate,
                       existing, log_path)
         done, skipped, failures, interrupted = _run_pool(
-            settings, synthesizer, run_log, items, output_dir, existing, ext, width, workers)
+            settings, synthesizer, run_log, items, output_dir, existing, records,
+            ext, width, workers)
 
-    _print_summary(settings, output_dir, done, skipped, failures,
-                   time.time() - started_at, workers)
+    elapsed = time.time() - started_at
+    saved_report: Path | None = None
+    if settings.log.report:
+        text = render_report(
+            stamp=stamp, started_at=started_at, elapsed=elapsed, settings=settings,
+            input_path=input_path, total_lines=len(lines), planned=len(items),
+            output_dir=output_dir, log_path=log_path, records=records, skipped=skipped)
+        saved_report = write_report(report_path, text)
+
+    _print_summary(settings, output_dir, done, skipped, failures, elapsed, workers,
+                   saved_report)
     if interrupted:
         return 130
     return 1 if failures else 0
@@ -113,7 +126,7 @@ def _print_header(settings: Settings, input_path: Path, output_dir: Path, total_
 
 def _run_pool(settings: Settings, synthesizer: Synthesizer, run_log: RunLog,
               items: list[tuple[int, str]], output_dir: Path, existing: set[str],
-              ext: str, width: int,
+              records: list[ItemRecord], ext: str, width: int,
               workers: int) -> tuple[int, int, list[tuple[int, str, str]], bool]:
     """并发跑完所有条目，返回 (成功数, 跳过数, 失败清单, 是否被中断)。"""
     total = len(items)
@@ -160,12 +173,17 @@ def _run_pool(settings: Settings, synthesizer: Synthesizer, run_log: RunLog,
             wpm = f"{stats.wpm(words):.0f}" if stats else ""
             run_log.write("OK", lineno, filename, duration=duration, silence=silence,
                           max_gap=max_gap, wpm=wpm, retries=retried)
+            records.append(ItemRecord(lineno=lineno, text=text, filename=filename,
+                                      status="ok", duration=duration, silence=silence,
+                                      max_gap=max_gap, wpm=wpm, retries=retried))
             log(f"{tag} ok {filename}  {duration}s  静音 {silence}／最长停顿 {max_gap}s"
                 f"／{wpm}wpm  重抽 {retried}  ({time.time() - started:.1f}s)")
             return "ok", lineno, text, ""
 
         except Exception as exc:
             run_log.write("FAIL", lineno, filename, retries=retried, note=str(exc))
+            records.append(ItemRecord(lineno=lineno, text=text, filename=filename,
+                                      status="failed", retries=retried, note=str(exc)))
             log(f"{tag} 失败：{filename}  ::  {exc}", err=True)
             return "failed", lineno, text, str(exc)
         finally:
@@ -201,7 +219,8 @@ def _run_pool(settings: Settings, synthesizer: Synthesizer, run_log: RunLog,
 
 
 def _print_summary(settings: Settings, output_dir: Path, done: int, skipped: int,
-                   failures: list[tuple[int, str, str]], elapsed: float, workers: int) -> None:
+                   failures: list[tuple[int, str, str]], elapsed: float, workers: int,
+                   report_path: Path | None = None) -> None:
     print()
     print("=" * 64)
     print(f"完成：新合成 {done} 条，跳过 {skipped} 条，失败 {len(failures)} 条，"
@@ -210,6 +229,8 @@ def _print_summary(settings: Settings, output_dir: Path, done: int, skipped: int
         print(f"输出目录：{output_dir.resolve()}")
     else:
         print(f"输出目录：本次未产生文件（目录 {output_dir.name} 未创建）")
+    if report_path is not None:
+        print(f"运行报告：{report_path}")
     if failures:
         failures.sort(key=lambda entry: entry[0])
         print(f"有 {len(failures)} 条失败（重跑会自动重试，失败的不落盘）：")

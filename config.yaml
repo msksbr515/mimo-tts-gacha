@@ -58,3 +58,4 @@ run:
 log:
   enabled: true
   dir: logs                  # 每次运行写 logs/run_<时间戳>.log（TSV，可直接用 Excel 打开）
+  report: true               # 每次运行另写一份 logs/report_<时间戳>.md 便于复盘
