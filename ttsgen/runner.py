@@ -58,16 +58,19 @@ def run(settings: Settings) -> int:
     gate = AdaptiveGate(ceiling=workers, start=min(2, workers))
     synthesizer = Synthesizer(settings, limiter=limiter, gate=gate)
 
-    output_dir = settings.paths.output
-    output_dir.mkdir(parents=True, exist_ok=True)
+    stamp = time.strftime("%Y_%m_%d_%H_%M_%S")
+    base_output = settings.paths.output
+    output_dir = base_output / stamp if settings.paths.timestamped else base_output
+    existing = collect_existing(base_output)
     ext = "." + settings.api.audio_format.strip(".").lower()
     width = max(4, len(str(max(lineno for lineno, _ in items))))
 
     started_at = time.time()
     with RunLog(settings.log.path, settings.log.enabled) as run_log:
-        _print_header(settings, input_path, output_dir, len(lines), len(items), workers, gate)
+        _print_header(settings, input_path, output_dir, len(lines), len(items), workers, gate,
+                      existing)
         done, skipped, failures, interrupted = _run_pool(
-            settings, synthesizer, run_log, items, output_dir, ext, width, workers)
+            settings, synthesizer, run_log, items, output_dir, existing, ext, width, workers)
 
     _print_summary(settings, output_dir, done, skipped, failures,
                    time.time() - started_at, workers)
@@ -76,10 +79,28 @@ def run(settings: Settings) -> int:
     return 1 if failures else 0
 
 
+def collect_existing(root: Path) -> set[str]:
+    """收集输出根目录下（含历次时间戳子目录）已存在的文件名，用于断点续跑。"""
+    names: set[str] = set()
+    if not root.exists():
+        return names
+    try:
+        for entry in root.rglob("*"):
+            if entry.is_file():
+                names.add(entry.name)
+    except OSError:
+        pass
+    return names
+
+
 def _print_header(settings: Settings, input_path: Path, output_dir: Path, total_lines: int,
-                  count: int, workers: int, gate: AdaptiveGate) -> None:
+                  count: int, workers: int, gate: AdaptiveGate,
+                  existing: set[str]) -> None:
     print(f"文本文件：{input_path.resolve()}   共 {total_lines} 行，待合成 {count} 条")
     print(f"输出目录：{output_dir.resolve()}")
+    if output_dir.parent.exists() and settings.paths.timestamped:
+        print(f"历史产物：{output_dir.parent.resolve()} 下已有 {len(existing)} 个文件，"
+              f"同名条目会自动跳过")
     print(f"参考音频：{settings.paths.voice}")
     print(f"停顿标记：{settings.pause.marker if settings.pause.enabled else '关闭'}")
     print(f"拖沓重抽：{settings.quality.retry} 次   日志："
@@ -90,7 +111,8 @@ def _print_header(settings: Settings, input_path: Path, output_dir: Path, total_
 
 
 def _run_pool(settings: Settings, synthesizer: Synthesizer, run_log: RunLog,
-              items: list[tuple[int, str]], output_dir: Path, ext: str, width: int,
+              items: list[tuple[int, str]], output_dir: Path, existing: set[str],
+              ext: str, width: int,
               workers: int) -> tuple[int, int, list[tuple[int, str, str]], bool]:
     """并发跑完所有条目，返回 (成功数, 跳过数, 失败清单, 是否被中断)。"""
     total = len(items)
@@ -105,7 +127,7 @@ def _run_pool(settings: Settings, synthesizer: Synthesizer, run_log: RunLog,
         tag = f"[{index}/{total}] 行 {lineno}"
         started = time.time()
 
-        if target.exists() and not settings.run.force:
+        if filename in existing and not settings.run.force:
             log(f"{tag} 已存在，跳过：{filename}")
             return "skipped", lineno, text, ""
 
@@ -126,6 +148,7 @@ def _run_pool(settings: Settings, synthesizer: Synthesizer, run_log: RunLog,
             if dragging:
                 raise RuntimeError(f"重抽 {retried} 次仍太拖沓（{reason}），已丢弃不保存")
 
+            target.parent.mkdir(parents=True, exist_ok=True)
             tmp = target.with_name(f"{target.stem}.part{ext}")
             tmp.write_bytes(audio_bytes)
             tmp.replace(target)
@@ -181,7 +204,11 @@ def _print_summary(settings: Settings, output_dir: Path, done: int, skipped: int
     print()
     print("=" * 64)
     print(f"完成：新合成 {done} 条，跳过 {skipped} 条，失败 {len(failures)} 条，"
-          f"用时 {elapsed:.1f}s（并发上限 {workers}），输出目录 {output_dir.resolve()}")
+          f"用时 {elapsed:.1f}s（并发上限 {workers}）")
+    if output_dir.exists():
+        print(f"输出目录：{output_dir.resolve()}")
+    else:
+        print(f"输出目录：本次未产生文件（目录 {output_dir.name} 未创建）")
     if failures:
         failures.sort(key=lambda entry: entry[0])
         print(f"有 {len(failures)} 条失败（重跑会自动重试，失败的不落盘）：")

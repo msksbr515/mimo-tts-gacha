@@ -50,6 +50,16 @@ def need(cfg: dict, dotted: str):
     return node
 
 
+def optional(cfg: dict, dotted: str, default):
+    """取可选配置项，缺失时返回默认值。"""
+    node = cfg
+    for part in dotted.split("."):
+        if not isinstance(node, dict) or part not in node:
+            return default
+        node = node[part]
+    return node
+
+
 @dataclass(frozen=True)
 class ApiConfig:
     base_url: str
@@ -64,6 +74,7 @@ class Paths:
     input: Path
     output: Path
     voice: Path
+    timestamped: bool = True
 
 
 @dataclass(frozen=True)
@@ -152,6 +163,7 @@ class Settings:
                 input=input_override or (base / need(cfg, "paths.input")),
                 output=base / need(cfg, "paths.output"),
                 voice=base / need(cfg, "paths.voice"),
+                timestamped=bool(optional(cfg, "paths.timestamped", True)),
             ),
             prompt=str(need(cfg, "prompt")),
             pause=PauseConfig(

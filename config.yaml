@@ -14,6 +14,8 @@ api:
 paths:
   input: input.txt           # 默认文本；命令行传了 txt 就用命令行那个
   output: output             # 音频输出目录
+  timestamped: true          # true = 每次运行落在 output/<年_月_日_时_分_秒>/ 下
+                             # false = 直接平铺在 output/（续跑旧批次时用）
   voice: source.wav          # 参考音频
 
 # ---------- 提示词（放在 user 消息里，决定腔调）----------
