@@ -1,5 +1,12 @@
 # 小米 MIMO-TTS 批量抽卡脚本
 
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://www.python.org/)
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)](#2-运行环境)
+[![Stars](https://img.shields.io/github/stars/msksbr515/mimo-tts-gacha.svg)](https://github.com/msksbr515/mimo-tts-gacha/stargazers)
+[![Last commit](https://img.shields.io/github/last-commit/msksbr515/mimo-tts-gacha.svg)](https://github.com/msksbr515/mimo-tts-gacha/commits/main)
+[![Issues](https://img.shields.io/github/issues/msksbr515/mimo-tts-gacha.svg)](https://github.com/msksbr515/mimo-tts-gacha/issues)
+
 用 MiMo-V2.5-TTS 语音克隆模型批量生成配音，逐条"抽卡"直到质量达标。
 
 版本 1.0.0
